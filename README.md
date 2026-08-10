@@ -6,15 +6,16 @@ Google Colab 上に Ollama + Open WebUI を立ち上げ、会話履歴を Google
 
 ## 現在のステータス
 
-**フェーズ1**: トンネル URL の発行〜モデルとの会話（AC1〜AC2）まで。
+- **フェーズ1（AC1〜AC2）達成**: トンネル URL の発行〜モデルとの会話まで、実機で確認済み（2026-08-10）
+- **フェーズ3 実装済み・検証中**: 会話履歴の Google Drive 永続化（AC3〜AC4、本プロジェクトの本丸）
 
-会話履歴の Drive 永続化（AC3〜AC4、本プロジェクトの本丸）は未実装。ランタイムを削除すると履歴もアカウントも消える。計画の全体は [PRD.md](PRD.md)、試行の記録は [devlog/](devlog/) を参照。
+計画の全体は [PRD.md](PRD.md)、試行の記録は [devlog/](devlog/) を参照。
 
 ## 使い方
 
 1. 上の「Open in Colab」バッジからノートブックを開く（GPU ランタイムが既定で選ばれる）
-2. 上から順にセルを実行する
-3. セル6に表示される `https://xxx.trycloudflare.com` を別タブで開く
+2. 上から順にセルを実行する（Google Drive のアクセス許可を求められたら許可する）
+3. セル7に表示される `https://xxx.trycloudflare.com` を別タブで開く
 
 ### 初回アクセスで必ずやること
 
@@ -25,7 +26,7 @@ Google Colab 上に Ollama + Open WebUI を立ち上げ、会話履歴を Google
 
 ### 使い終わったら
 
-ノートブック末尾の停止セルで `STOP` にチェックを入れて実行してから、ランタイムを削除する（チェックなしで実行しても何もしない）。
+ノートブック末尾の停止セルで `STOP` にチェックを入れて実行すると、会話履歴が Google Drive（`MyDrive/colab-ollama-webui/data`）へ書き戻される。その後にランタイムを削除する（チェックなしで実行しても何もしないので、「すべてのセルを実行」に巻き込まれても安全）。
 
 ## 構成
 
@@ -34,6 +35,10 @@ Colab VM (GPU ランタイム / 割り当ては可変)
 ├── Ollama          :11434   モデル推論
 ├── Open WebUI      :8081    Python 3.11 venv 上で起動（8080 は Colab 内部サービスと衝突する）
 └── cloudflared             :8081 → https://<random>.trycloudflare.com
+
+Google Drive (マウント)
+└── MyDrive/colab-ollama-webui/
+    └── data/    会話履歴・アカウント（起動時に復元、稼働中は5分ごと＋停止時に書き戻し）
 ```
 
 モデルは起動時に検出した VRAM 量から自動選択される（`MODEL` 変数で手動指定も可能）。

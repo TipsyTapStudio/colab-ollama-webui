@@ -15,13 +15,14 @@
 #
 # Colab 上に Ollama + Open WebUI を立ち上げ、cloudflared の Quick Tunnel 経由でブラウザの別タブから使う。
 #
-# **現在はフェーズ1（AC1〜AC2）**: トンネル URL の発行とモデルとの会話まで。
-# 会話履歴の Drive 永続化（AC3〜AC4）は未実装。ランタイムを削除すると履歴もアカウントも消える。
+# 会話履歴は Google Drive（`MyDrive/colab-ollama-webui/data`）にバックアップされ、
+# 次のセッションで復元される。ランタイムを削除しても続きから話せる。
 #
 # 使い方:
 # 1. ランタイム → ランタイムのタイプを変更 → GPU を選択
-# 2. 上から順にセルを実行
-# 3. セル6に表示される URL を別タブで開き、「初回アクセス時にやること」に従う
+# 2. 上から順にセルを実行（Google Drive のアクセス許可を求められたら許可する）
+# 3. セル7に表示される URL を別タブで開き、「初回アクセス時にやること」に従う
+# 4. 使い終わったらセル8で STOP にチェックを入れて実行 → ランタイムを削除
 
 # %% [markdown]
 # ## 0. 設定と共通ヘルパー
@@ -31,8 +32,10 @@ MODEL = "auto"  # "auto" なら VRAM 量から自動選択。例: "qwen3:8b", "g
 
 WEBUI_PORT = 8081  # 8080 は Colab VM 自身の内部サービスが使っているため避ける
 OLLAMA_URL = "http://127.0.0.1:11434"
-DATA_DIR = "/content/owui-data"  # Open WebUI のデータ置き場（フェーズ3で Drive と同期する）
+DATA_DIR = "/content/owui-data"  # Open WebUI のデータ置き場（会話履歴の SQLite を含む）
 VENV_DIR = "/content/owui-venv"
+DRIVE_DATA = "/content/drive/MyDrive/colab-ollama-webui/data"  # Drive 上のバックアップ先
+SYNC_INTERVAL_SEC = 300  # 稼働中の定期バックアップ間隔（PRD: 初期値5分、実測で調整）
 
 import os
 import re
@@ -120,6 +123,38 @@ def tail(name, n=40):
             print("".join(f.readlines()[-n:]))
 
 
+def backup_to_drive(label="定期"):
+    """DATA_DIR を Drive へバックアップする（R2 の心臓部）。
+    SQLite は稼働中でも壊れないようオンラインバックアップ API でローカルに
+    スナップショットを取り、それを Drive へコピーする（FUSE 上で SQLite を
+    直接開かない）。その他のファイルは rsync で差分同期する。"""
+    import sqlite3
+    db = f"{DATA_DIR}/webui.db"
+    if not os.path.exists(db):
+        return False  # まだデータがない（初回起動前など）
+    if not os.path.isdir("/content/drive/MyDrive"):
+        return False  # Drive 未マウント
+    os.makedirs(DRIVE_DATA, exist_ok=True)
+    snap = "/content/webui.db.snapshot"
+    src = sqlite3.connect(db)
+    try:
+        dst = sqlite3.connect(snap)
+        with dst:
+            src.backup(dst)
+        dst.close()
+    finally:
+        src.close()
+    shutil.copy2(snap, f"{DRIVE_DATA}/webui.db")
+    os.remove(snap)
+    subprocess.run(
+        f"rsync -a --delete --exclude 'webui.db*' --exclude 'cache/' {DATA_DIR}/ {DRIVE_DATA}/",
+        shell=True,
+    )
+    with open("/content/sync.log", "a") as f:
+        f.write(f"{time.strftime('%H:%M:%S')} {label}バックアップ完了\n")
+    return True
+
+
 print("設定完了")
 
 # %% [markdown]
@@ -162,7 +197,32 @@ print(f"使用モデル: {RESOLVED_MODEL} {suffix}")
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
 # %% [markdown]
-# ## 2. Ollama のインストールと起動
+# ## 2. Google Drive のマウントと履歴の復元（R2）
+#
+# 会話履歴・アカウント・設定の実体は `DATA_DIR` 内の SQLite (`webui.db`)。
+# Drive の FUSE マウント上で SQLite を直接開くのはファイルロックの都合で危険なため、
+# ローカルにコピーして動かし、Drive へは定期的＋停止時に書き戻す（PRD 4章）。
+# 初回は Drive へのアクセス許可のポップアップが出るので許可すること。
+
+# %%
+cell_start = time.time()
+
+from google.colab import drive
+drive.mount("/content/drive")
+
+os.makedirs(DATA_DIR, exist_ok=True)
+if os.path.exists(f"{DATA_DIR}/webui.db"):
+    print("ローカルに稼働中のデータがあるため、Drive からの復元はスキップ（同一ランタイムでの再実行）")
+elif os.path.exists(f"{DRIVE_DATA}/webui.db"):
+    run(f"rsync -a {DRIVE_DATA}/ {DATA_DIR}/")
+    print("Drive から前回の履歴を復元した")
+else:
+    print("Drive にバックアップなし（初回起動）。まっさらで始める")
+
+print(f"所要時間: {time.time() - cell_start:.0f}秒")
+
+# %% [markdown]
+# ## 3. Ollama のインストールと起動
 
 # %%
 cell_start = time.time()
@@ -194,7 +254,7 @@ else:
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
 # %% [markdown]
-# ## 3. モデルの取得
+# ## 4. モデルの取得
 #
 # `MODEL` を変えてこのセルを再実行すれば、追加のモデルも取得できる。
 
@@ -207,7 +267,7 @@ run("ollama list")
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
 # %% [markdown]
-# ## 4. Open WebUI のインストール（Python 3.11 venv）
+# ## 5. Open WebUI のインストール（Python 3.11 venv）
 #
 # Open WebUI の Python バージョン制約（リスク1）に対応するため、Colab 標準の Python とは
 # 別に 3.11 の venv を作ってそこへ入れる。初回は数分かかる。
@@ -237,7 +297,7 @@ else:
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
 # %% [markdown]
-# ## 5. Open WebUI の起動
+# ## 6. Open WebUI の起動と定期バックアップの開始
 
 # %%
 cell_start = time.time()
@@ -277,10 +337,30 @@ else:
         tail("open-webui")
         raise RuntimeError("Open WebUI が起動しませんでした。上のログを確認してください")
 
+# 定期バックアップ（保険。主たる保存経路は停止セルの書き戻し — PRD 4章）
+import threading
+
+if "SYNC_THREAD" not in globals() or not SYNC_THREAD.is_alive():
+    SYNC_STOP = threading.Event()
+
+    def _sync_loop():
+        while not SYNC_STOP.wait(SYNC_INTERVAL_SEC):
+            try:
+                backup_to_drive("定期")
+            except Exception as e:
+                with open("/content/sync.log", "a") as f:
+                    f.write(f"{time.strftime('%H:%M:%S')} バックアップ失敗: {e}\n")
+
+    SYNC_THREAD = threading.Thread(target=_sync_loop, daemon=True)
+    SYNC_THREAD.start()
+    print(f"定期バックアップを開始（{SYNC_INTERVAL_SEC // 60}分間隔、記録: /content/sync.log）")
+else:
+    print("定期バックアップは動作中")
+
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
 # %% [markdown]
-# ## 6. トンネルの発行（AC1）
+# ## 7. トンネルの発行（AC1）
 #
 # Quick Tunnel には稼働保証がない（リスク3）ため、URL が取れるまで最大5回リトライする。
 
@@ -348,32 +428,40 @@ print(f"所要時間: {time.time() - cell_start:.0f}秒")
 # トンネル URL には認証がなく、Open WebUI は**最初にサインアップした人が管理者になる**。
 #
 # 1. URL を開いたら、すぐに自分の管理者アカウントを作成する（メールアドレスは実在しなくてもよい）
-# 2. 左下のユーザー名 → **管理者パネル → 設定 → 一般** で **新規サインアップを無効化** する
+# 2. 左下のユーザー名 → **管理者パネル → 設定 → 一般** にある
+#    **「新規サインアップを有効にする」をオフ**にする（バージョンによっては「認証」という
+#    見出しの下にある。見つからない場合も、新規登録者は「保留」扱いで管理者が承認するまで
+#    使えないため、即座に危険にはならない）
 #
-# ※ フェーズ1では履歴もアカウントも永続化されないため、ランタイムを削除するとやり直しになる。
+# ※ 2回目以降のセッションでは、前回作ったアカウントでそのままログインする。
+# この設定も履歴と一緒に Drive へ保存され、引き継がれる。
 
 # %% [markdown]
-# ## 7. 停止（使い終わったら）
+# ## 8. 停止（使い終わったら）— R6 / AC4
 #
-# **STOP にチェックを入れて（True にして）から実行**すると停止する。
+# **STOP にチェックを入れて（True にして）から実行**すると、履歴を Drive へ書き戻してから停止する。
 # チェックなしでは何もしないため、「すべてのセルを実行」で誤ってサービスが止まることはない。
 #
-# フェーズ1版: プロセスを止めるだけ。Drive への履歴書き戻し（R6 / AC4）はフェーズ3でここに入る。
-# このセルは単独で実行できる（再接続後などにセル0を実行し直す必要はない）。
+# ここが**主たる保存経路**（5分ごとの定期バックアップは保険）。
+# カーネルを再起動した場合は、セル0とセル2を実行してからこのセルを使うこと。
 
 # %%
 STOP = False  # @param {type:"boolean"}
 
-import subprocess
-
 if not STOP:
     print("何もしていません。停止するには STOP にチェックを入れて（True にして）このセルを実行する")
 else:
-    for label, pattern in [
-        ("cloudflared", "cloudflared tunnel"),
-        ("Open WebUI", "open-webui serve"),
-        ("Ollama", "ollama serve"),
-    ]:
-        subprocess.run(f"pkill -f '{pattern}'", shell=True)
-        print(f"{label} を停止しました")
-    print("停止完了。ランタイムを削除してよい（ランタイム → セッションの管理）")
+    # 先にトンネルと Open WebUI を止め、DB への書き込みが止まった状態で書き戻す
+    subprocess.run("pkill -f 'cloudflared tunnel'", shell=True)
+    subprocess.run("pkill -f owui-venv", shell=True)
+    print("cloudflared / Open WebUI を停止した")
+    time.sleep(5)
+    if "SYNC_STOP" in globals():
+        SYNC_STOP.set()
+    if backup_to_drive("最終"):
+        print(f"履歴を Drive へ書き戻した: {DRIVE_DATA}")
+    else:
+        print("警告: Drive への書き戻しができなかった（Drive 未マウント？ セル0とセル2を実行してから再試行を）")
+    subprocess.run("pkill -f 'ollama serve'", shell=True)
+    print("Ollama を停止した")
+    print("停止完了。ランタイムを削除してよい（ランタイム → 接続解除してランタイムを削除）")
