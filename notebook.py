@@ -29,7 +29,7 @@
 # %%
 MODEL = "auto"  # "auto" なら VRAM 量から自動選択。例: "qwen3:8b", "gemma3:12b"
 
-WEBUI_PORT = 8080
+WEBUI_PORT = 8081  # 8080 は Colab VM 自身の内部サービスが使っているため避ける
 OLLAMA_URL = "http://127.0.0.1:11434"
 DATA_DIR = "/content/owui-data"  # Open WebUI のデータ置き場（フェーズ3で Drive と同期する）
 VENV_DIR = "/content/owui-venv"
@@ -83,20 +83,33 @@ def http_ok(url, timeout=3):
         return False
 
 
-def wait_http(url, timeout, label):
-    """URL が応答するまで待つ。起動確認用。30秒ごとに経過を表示する。"""
+def wait_http(url, timeout, label, proc=None):
+    """URL が応答するまで待つ。起動確認用。30秒ごとに経過を表示し、
+    proc を渡された場合はプロセスが死んだ時点で即座に諦める。"""
     start = time.time()
     last_report = 0
     while time.time() - start < timeout:
         if http_ok(url):
             print(f"{label}: 起動を確認 ({time.time() - start:.0f}秒)")
             return True
+        if proc is not None and proc.poll() is not None:
+            print(f"{label}: プロセスが終了コード {proc.returncode} で落ちました")
+            return False
         elapsed = time.time() - start
         if elapsed - last_report >= 30:
             print(f"{label}: 起動待ち... {elapsed:.0f}秒経過（初回は数分かかる）", flush=True)
             last_report = elapsed
         time.sleep(3)
     return False
+
+
+def port_holder(port):
+    """ポートを LISTEN しているプロセスの情報を返す（空文字列なら空きポート）。"""
+    out = subprocess.run(
+        f"ss -tlnp 'sport = :{port}'", shell=True, capture_output=True, text=True
+    )
+    lines = [l for l in out.stdout.strip().splitlines()[1:] if l.strip()]
+    return "\n".join(lines)
 
 
 def tail(name, n=40):
@@ -173,8 +186,8 @@ else:
 if http_ok(f"{OLLAMA_URL}/api/version"):
     print("Ollama は起動済み")
 else:
-    spawn("ollama", "ollama serve")
-    if not wait_http(f"{OLLAMA_URL}/api/version", 60, "Ollama"):
+    p = spawn("ollama", "ollama serve")
+    if not wait_http(f"{OLLAMA_URL}/api/version", 60, "Ollama", proc=p):
         tail("ollama")
         raise RuntimeError("Ollama が起動しませんでした。上のログを確認してください")
 
@@ -244,17 +257,23 @@ os.makedirs(DATA_DIR, exist_ok=True)
 if http_ok(f"http://127.0.0.1:{WEBUI_PORT}/health"):
     print("Open WebUI は起動済み")
 else:
-    # Open WebUI は初期化に数分かけてから bind するため、起動しかけの古いプロセスが
-    # ポートを掴んだまま残っていることがある。必ず消してから起動し直す
-    subprocess.run("pkill -f 'open-webui serve'", shell=True)
+    # 以前の実行の残骸（この venv から起動したプロセスとその子）を掃除してから起動する
+    subprocess.run("pkill -f owui-venv", shell=True)
     time.sleep(3)
-    spawn(
+    holder = port_holder(WEBUI_PORT)
+    if holder:
+        print(f"ポート {WEBUI_PORT} を別のプロセスが使用中:\n{holder}")
+        raise RuntimeError(
+            f"ポート {WEBUI_PORT} が空いていません。上の表示を確認し、"
+            "セル0の WEBUI_PORT を別の番号（例: 8082）に変えて上から実行し直してください"
+        )
+    p = spawn(
         "open-webui",
         f"{VENV_DIR}/bin/open-webui serve --host 127.0.0.1 --port {WEBUI_PORT}",
         env=WEBUI_ENV,
     )
     # 初回起動は内部 DB の初期化や埋め込みモデルの取得が走るため、長めに待つ
-    if not wait_http(f"http://127.0.0.1:{WEBUI_PORT}/health", 600, "Open WebUI"):
+    if not wait_http(f"http://127.0.0.1:{WEBUI_PORT}/health", 600, "Open WebUI", proc=p):
         tail("open-webui")
         raise RuntimeError("Open WebUI が起動しませんでした。上のログを確認してください")
 

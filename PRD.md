@@ -56,8 +56,8 @@ Google Colab 上に Ollama + Open WebUI を立て、会話履歴を Google Drive
 ```
 Colab VM (GPU ランタイム / 割り当ては可変)
 ├── Ollama          :11434   モデル推論
-├── Open WebUI      :8080    Python 3.11 venv 上で起動
-└── cloudflared             :8080 → https://<random>.trycloudflare.com
+├── Open WebUI      :8081    Python 3.11 venv 上で起動（8080 は Colab 内部サービスと衝突するため不可）
+└── cloudflared             :8081 → https://<random>.trycloudflare.com
                                     ↑ これを別タブで開く
 
 Google Drive (マウント)

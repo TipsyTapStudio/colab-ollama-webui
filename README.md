@@ -32,8 +32,8 @@ Google Colab 上に Ollama + Open WebUI を立ち上げ、会話履歴を Google
 ```
 Colab VM (GPU ランタイム / 割り当ては可変)
 ├── Ollama          :11434   モデル推論
-├── Open WebUI      :8080    Python 3.11 venv 上で起動
-└── cloudflared             :8080 → https://<random>.trycloudflare.com
+├── Open WebUI      :8081    Python 3.11 venv 上で起動（8080 は Colab 内部サービスと衝突する）
+└── cloudflared             :8081 → https://<random>.trycloudflare.com
 ```
 
 モデルは起動時に検出した VRAM 量から自動選択される（`MODEL` 変数で手動指定も可能）。
