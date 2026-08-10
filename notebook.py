@@ -33,9 +33,9 @@
 
 # %%
 #@title モデルと起動オプション { display-mode: "form" }
-MODEL = "auto"  #@param ["auto", "qwen3:8b", "qwen3:4b", "qwen3:14b", "gemma3:12b", "hf.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive:Q4_K_M", "hf.co/HauhauCS/Qwen3.5-27B-Uncensored-HauhauCS-Aggressive:Q4_K_M"] {allow-input: true}
-#@markdown 「auto」は割り当て GPU の VRAM からサイズを自動選択する。
-#@markdown Uncensored 版は 27B が L4(24GB)以上・9B が T4(16GB)向け。タグ（:Q4_K_M）で失敗したらタグを消して試す。
+MODEL = "hf.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive:Q4_K_M"  #@param ["auto", "qwen3:8b", "qwen3:4b", "qwen3:14b", "gemma3:12b", "hf.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive:Q4_K_M", "hf.co/HauhauCS/Qwen3.5-27B-Uncensored-HauhauCS-Aggressive:Q4_K_M"] {allow-input: true}
+#@markdown 既定は Uncensored 9B（T4 向け）。「auto」にすると割り当て GPU の VRAM からサイズを自動選択する。
+#@markdown Uncensored 27B は L4(24GB)以上向け。タグ（:Q4_K_M）で失敗したらタグを消して試す。
 
 #@markdown ---
 #@markdown 画像を扱える gemma3:12b も一緒に入れる（qwen3 や Uncensored 版は画像非対応）:

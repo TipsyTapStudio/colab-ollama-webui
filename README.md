@@ -40,7 +40,9 @@ Google Drive (マウント)
     └── data/    会話履歴・アカウント（起動時に復元、稼働中は5分ごと＋停止時に書き戻し）
 ```
 
-モデルはセル0のプルダウン（Colab フォーム）から選ぶ。「auto」なら起動時に検出した VRAM 量から自動選択される。一覧にないモデル（Ollama / Hugging Face のモデル名）は選択欄に直接入力もできる。
+モデルはセル0のプルダウン（Colab フォーム）から選ぶ。既定は Uncensored 9B（`hf.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive:Q4_K_M`）。画像用の gemma3:12b も既定で一緒に入る。一覧にないモデル（Ollama / Hugging Face のモデル名）は選択欄に直接入力もできる。
+
+「auto」を選ぶと、起動時に検出した VRAM 量からサイズを自動選択する:
 
 | VRAM | 自動選択されるモデル |
 |---|---|
