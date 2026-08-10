@@ -29,6 +29,7 @@
 
 # %%
 MODEL = "auto"  # "auto" なら VRAM 量から自動選択。例: "qwen3:8b", "gemma3:12b"
+EXTRA_MODELS = ["gemma3:12b"]  # 追加で入れるモデル。gemma3 は画像入力に対応（不要なら [] に）
 
 WEBUI_PORT = 8081  # 8080 は Colab VM 自身の内部サービスが使っているため避ける
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -270,12 +271,15 @@ print(f"所要時間: {time.time() - cell_start:.0f}秒")
 # %% [markdown]
 # ## 4. モデルの取得
 #
-# `MODEL` を変えてこのセルを再実行すれば、追加のモデルも取得できる。
+# `MODEL` / `EXTRA_MODELS` を変えてこのセルを再実行すれば、モデルを追加できる。
+# 会話ごとの切り替えは Open WebUI 画面上部のドロップダウンから。
 
 # %%
 cell_start = time.time()
 
 run(f"ollama pull {RESOLVED_MODEL}")
+for m in EXTRA_MODELS:
+    run(f"ollama pull {m}")
 run("ollama list")
 
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
