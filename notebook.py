@@ -22,7 +22,7 @@
 # 1. ランタイム → ランタイムのタイプを変更 → GPU を選択
 # 2. 上から順にセルを実行（Google Drive のアクセス許可を求められたら許可する）
 # 3. セル7に表示される URL を別タブで開き、「初回アクセス時にやること」に従う
-# 4. 使い終わったらセル8で STOP にチェックを入れて実行 → ランタイムを削除
+# 4. 使い終わったらセル9で STOP にチェックを入れて実行 → ランタイムを削除
 
 # %% [markdown]
 # ## 0. 設定と共通ヘルパー
@@ -452,7 +452,35 @@ print(f"所要時間: {time.time() - cell_start:.0f}秒")
 #   アカウントも設定も Drive に保存されて引き継がれる）
 
 # %% [markdown]
-# ## 8. 停止（使い終わったら）— R6 / AC4
+# ## 8. ログを眺める（任意）
+#
+# サービスは裏で動いているため、通常はセルに何も流れない。A1111 のようにログを
+# 流し見したいときは **WATCH にチェックを入れて実行**すると、3つのログを
+# リアルタイムで表示し続ける（止めるにはセルの実行を停止 ■）。
+# チェックなしで実行した場合は、各ログの末尾を1回表示するだけ。
+
+# %%
+WATCH = False  # @param {type:"boolean"}
+
+if WATCH:
+    print("ログを追跡中。止めるにはこのセルの実行を停止（■）する")
+    _p = subprocess.Popen(
+        "tail -n 5 -f /content/ollama.log /content/open-webui.log /content/cloudflared.log",
+        shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, errors="replace",
+    )
+    try:
+        for _line in _p.stdout:
+            print(_line, end="", flush=True)
+    finally:
+        _p.kill()
+else:
+    for _name in ["ollama", "open-webui", "cloudflared"]:
+        print(f"===== /content/{_name}.log の末尾 =====")
+        tail(_name, 15)
+
+# %% [markdown]
+# ## 9. 停止（使い終わったら）— R6 / AC4
 #
 # **STOP にチェックを入れて（True にして）から実行**すると、履歴を Drive へ書き戻してから停止する。
 # チェックなしでは何もしないため、「すべてのセルを実行」で誤ってサービスが止まることはない。
