@@ -2,9 +2,7 @@
 
 Google Colab 上に Ollama + Open WebUI を立ち上げ、会話履歴を Google Drive に永続化する再現可能なノートブック。
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/GITHUB_USERNAME/colab-ollama-webui/blob/main/notebook.ipynb)
-
-> GitHub へ push したら、上のリンクの `GITHUB_USERNAME` を自分のユーザー名に置き換えること。
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TipsyTapStudio/colab-ollama-webui/blob/main/notebook.ipynb)
 
 ## 現在のステータス
 
