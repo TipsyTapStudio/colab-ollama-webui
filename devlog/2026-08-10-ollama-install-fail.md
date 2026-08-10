@@ -30,3 +30,28 @@
 
 - install.sh の失敗原因の特定は追わない（回避策で十分なため）
 - 置き換え後の手順はまだ実機未検証。次回実行で確認する
+
+---
+
+# 追記: 2回目の実行 — .tgz が 404
+
+回避策の `ollama-linux-amd64.tgz` も 404 で失敗した。run() の修正が効いて、今回は wget のログが全部セルに出た（リダイレクト先の GitHub リリース v0.32.6 に .tgz が存在しない）。
+
+## 判明したこと
+
+GitHub API でリリースのアセット一覧を確認したところ、Linux 向けの配布形式は **`.tar.zst`（zstd 圧縮）に変わっており、`.tgz` は廃止されていた**。公式 install.sh（リリース同梱版）を読むと:
+
+- `.tar.zst` があればそれを使い、展開に `zstd` コマンドを要求する（なければ即エラー終了）
+- 展開先は `/usr/local`（`bin/ollama` + `lib/ollama/` のレイアウト、CUDA ランタイム同梱）
+
+初回の install.sh の exit 1 も、Colab に zstd がなかった可能性が高い（当時は出力が見えず確認できなかったが、この経路なら説明がつく）。
+
+## 対処
+
+- zstd がなければ `apt-get install zstd`
+- `ollama-linux-amd64.tar.zst` を GitHub リリースの latest URL から取得し、install.sh と同じ `zstd -d | tar -x` で `/usr/local` へ展開
+- 展開後に `ollama --version` を実行して導入を即確認する
+
+## 学び
+
+- 配布 URL・形式はリリースごとに変わりうる。外部リソースへの依存箇所は「今この瞬間の実物」を確認してから書く（今回は GitHub API と install.sh の実物で裏取りした）

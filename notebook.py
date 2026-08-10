@@ -150,14 +150,18 @@ print(f"所要時間: {time.time() - cell_start:.0f}秒")
 cell_start = time.time()
 
 # 公式の install.sh は環境検査が多く Colab で失敗することがあるため、
-# 公式ドキュメントの手動インストール手順（tgz を /usr に展開するだけ）を使う
+# アーカイブを /usr/local に展開するだけの手動インストールにする。
+# 配布形式は v0.32 時点で .tar.zst（.tgz は廃止済み）。展開に zstd が要る
 if shutil.which("ollama") is None:
+    if shutil.which("zstd") is None:
+        run("apt-get install -y -qq zstd")
     run(
-        "wget --progress=dot:giga -O /tmp/ollama.tgz "
-        "https://ollama.com/download/ollama-linux-amd64.tgz"
+        "wget --progress=dot:giga -O /tmp/ollama.tar.zst "
+        "https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tar.zst"
     )
-    run("tar -C /usr -xzf /tmp/ollama.tgz")
-    run("rm /tmp/ollama.tgz")
+    run("zstd -d -c /tmp/ollama.tar.zst | tar -xf - -C /usr/local")
+    run("rm /tmp/ollama.tar.zst")
+    run("ollama --version")
 else:
     print("Ollama はインストール済み")
 
