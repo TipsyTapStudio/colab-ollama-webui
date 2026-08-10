@@ -25,11 +25,27 @@
 # 4. 使い終わったらセル9で STOP にチェックを入れて実行 → ランタイムを削除
 
 # %% [markdown]
-# ## 0. 設定と共通ヘルパー
+# ## 0. 設定
+#
+# 使うモデルを右のプルダウンから選ぶ。一覧にないモデルは選択欄に直接入力もできる
+# （Ollama や Hugging Face のモデル名。例: `llama3.1:8b`）。
+# 変えたらこのセルを実行し直し、セル1とセル4も実行し直す。
 
 # %%
-MODEL = "auto"  # "auto" なら VRAM 量から自動選択。例: "qwen3:8b", "gemma3:12b"
-EXTRA_MODELS = ["gemma3:12b"]  # 追加で入れるモデル。gemma3 は画像入力に対応（不要なら [] に）
+#@title モデルと起動オプション { display-mode: "form" }
+MODEL = "auto"  #@param ["auto", "qwen3:8b", "qwen3:4b", "qwen3:14b", "gemma3:12b", "hf.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive:Q4_K_M", "hf.co/HauhauCS/Qwen3.5-27B-Uncensored-HauhauCS-Aggressive:Q4_K_M"] {allow-input: true}
+#@markdown 「auto」は割り当て GPU の VRAM からサイズを自動選択する。
+#@markdown Uncensored 版は 27B が L4(24GB)以上・9B が T4(16GB)向け。タグ（:Q4_K_M）で失敗したらタグを消して試す。
+
+#@markdown ---
+#@markdown 画像を扱える gemma3:12b も一緒に入れる（qwen3 や Uncensored 版は画像非対応）:
+LOAD_VISION_MODEL = True  #@param {type:"boolean"}
+
+# %% [markdown]
+# 以下は共通の定数とヘルパー（通常は編集不要）。
+
+# %%
+EXTRA_MODELS = ["gemma3:12b"] if LOAD_VISION_MODEL else []  # 追加で入れるモデル
 
 WEBUI_PORT = 8081  # 8080 は Colab VM 自身の内部サービスが使っているため避ける
 OLLAMA_URL = "http://127.0.0.1:11434"
