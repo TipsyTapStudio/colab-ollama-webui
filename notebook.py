@@ -45,10 +45,18 @@ PROCS = {}
 
 
 def run(cmd, check=True, env=None):
-    """シェルコマンドを実行し、出力をそのままセルに流す。"""
+    """シェルコマンドを実行する。出力は Python 側で読み取ってセルに流す
+    （fd 継承まかせにすると Colab でサブプロセスの出力が見えないことがあるため）。"""
     print(f"$ {cmd}", flush=True)
     merged = {**os.environ, **(env or {})}
-    p = subprocess.run(cmd, shell=True, env=merged)
+    p = subprocess.Popen(
+        cmd, shell=True, env=merged,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, errors="replace",
+    )
+    for line in p.stdout:
+        print(line, end="", flush=True)
+    p.wait()
     if check and p.returncode != 0:
         raise RuntimeError(f"コマンドが失敗しました (exit {p.returncode}): {cmd}")
     return p.returncode
@@ -141,8 +149,15 @@ print(f"所要時間: {time.time() - cell_start:.0f}秒")
 # %%
 cell_start = time.time()
 
+# 公式の install.sh は環境検査が多く Colab で失敗することがあるため、
+# 公式ドキュメントの手動インストール手順（tgz を /usr に展開するだけ）を使う
 if shutil.which("ollama") is None:
-    run("curl -fsSL https://ollama.com/install.sh | sh")
+    run(
+        "wget --progress=dot:giga -O /tmp/ollama.tgz "
+        "https://ollama.com/download/ollama-linux-amd64.tgz"
+    )
+    run("tar -C /usr -xzf /tmp/ollama.tgz")
+    run("rm /tmp/ollama.tgz")
 else:
     print("Ollama はインストール済み")
 
