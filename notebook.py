@@ -41,25 +41,39 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import urllib.request
 
 PROCS = {}
 
 
-def run(cmd, check=True, env=None):
+def run(cmd, check=True, env=None, heartbeat=False):
     """シェルコマンドを実行する。出力は Python 側で読み取ってセルに流す
-    （fd 継承まかせにすると Colab でサブプロセスの出力が見えないことがあるため）。"""
+    （fd 継承まかせにすると Colab でサブプロセスの出力が見えないことがあるため）。
+    heartbeat=True にすると、出力のない長いコマンドでも30秒ごとに経過時間を表示する。"""
     print(f"$ {cmd}", flush=True)
     merged = {**os.environ, **(env or {})}
+    start = time.time()
     p = subprocess.Popen(
         cmd, shell=True, env=merged,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, errors="replace",
     )
+    hb_stop = None
+    if heartbeat:
+        hb_stop = threading.Event()
+
+        def _hb():
+            while not hb_stop.wait(30):
+                print(f"  ...実行中（{time.time() - start:.0f}秒経過）", flush=True)
+
+        threading.Thread(target=_hb, daemon=True).start()
     for line in p.stdout:
         print(line, end="", flush=True)
     p.wait()
+    if hb_stop:
+        hb_stop.set()
     if check and p.returncode != 0:
         raise RuntimeError(f"コマンドが失敗しました (exit {p.returncode}): {cmd}")
     return p.returncode
@@ -237,7 +251,7 @@ if shutil.which("ollama") is None:
         "wget --progress=dot:giga -O /tmp/ollama.tar.zst "
         "https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tar.zst"
     )
-    run("zstd -d -c /tmp/ollama.tar.zst | tar -xf - -C /usr/local")
+    run("zstd -d -c /tmp/ollama.tar.zst | tar -xf - -C /usr/local", heartbeat=True)
     run("rm /tmp/ollama.tar.zst")
     run("ollama --version")
 else:
@@ -277,12 +291,12 @@ cell_start = time.time()
 
 if shutil.which("python3.11") is None:
     run("apt-get update -qq")
-    run("apt-get install -y -qq python3.11 python3.11-venv", check=False)
+    run("apt-get install -y -qq python3.11 python3.11-venv", check=False, heartbeat=True)
     if shutil.which("python3.11") is None:
         # 標準リポジトリに 3.11 がない場合（Ubuntu 24.04 など）は deadsnakes を使う
         run("add-apt-repository -y ppa:deadsnakes/ppa")
         run("apt-get update -qq")
-        run("apt-get install -y -qq python3.11 python3.11-venv")
+        run("apt-get install -y -qq python3.11 python3.11-venv", heartbeat=True)
     run("apt-get install -y -qq python3.11-distutils", check=False)
 run("python3.11 --version")
 
@@ -290,9 +304,9 @@ if os.path.exists(f"{VENV_DIR}/bin/open-webui"):
     print("Open WebUI はインストール済み")
 else:
     run(f"python3.11 -m venv {VENV_DIR}")
-    run(f"{VENV_DIR}/bin/pip install -q --upgrade pip")
-    print("open-webui をインストール中（数分かかる）...")
-    run(f"{VENV_DIR}/bin/pip install -q open-webui")
+    run(f"{VENV_DIR}/bin/pip install -q --upgrade pip", heartbeat=True)
+    print("open-webui をインストール中（初回は5分ほどかかる。経過は30秒ごとに表示される）...")
+    run(f"{VENV_DIR}/bin/pip install -q open-webui", heartbeat=True)
 
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
@@ -423,17 +437,15 @@ else:
 print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
 # %% [markdown]
-# ## 初回アクセス時にやること（リスク5対応）
+# ## 初回アクセス時にやること
 #
-# トンネル URL には認証がなく、Open WebUI は**最初にサインアップした人が管理者になる**。
+# **アカウント未作成（まっさらな Drive で始めた）ときだけ**の手順。
+# 2回目以降のセッションでは、前回のアカウントでログインするだけでよい。
 #
-# 1. URL を開いたら、すぐに自分の管理者アカウントを作成する（メールアドレスは実在しなくてもよい）
-# 2. 左下のユーザー名 → **管理者パネル → 設定（管理者の「認証」）** で
-#    **「New Sign Ups」がオフ**になっていることを確認する
-#    （v0.11 では初期値オフだった。さらに新規登録者は「保留」扱いで管理者が承認するまで使えない）
-#
-# ※ 2回目以降のセッションでは、前回作ったアカウントでそのままログインする。
-# この設定も履歴と一緒に Drive へ保存され、引き継がれる。
+# - トンネル URL には認証がなく、**最初にサインアップした人が管理者になる**。
+#   URL を開いたら、すぐに自分の管理者アカウントを作成する（メールアドレスは実在しなくてもよい）
+# - 新規サインアップの無効化は不要（v0.11 は New Sign Ups が初期値オフ、新規登録者は保留承認制。
+#   アカウントも設定も Drive に保存されて引き継がれる）
 
 # %% [markdown]
 # ## 8. 停止（使い終わったら）— R6 / AC4
