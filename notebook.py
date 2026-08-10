@@ -84,12 +84,17 @@ def http_ok(url, timeout=3):
 
 
 def wait_http(url, timeout, label):
-    """URL が応答するまで待つ。起動確認用。"""
+    """URL が応答するまで待つ。起動確認用。30秒ごとに経過を表示する。"""
     start = time.time()
+    last_report = 0
     while time.time() - start < timeout:
         if http_ok(url):
             print(f"{label}: 起動を確認 ({time.time() - start:.0f}秒)")
             return True
+        elapsed = time.time() - start
+        if elapsed - last_report >= 30:
+            print(f"{label}: 起動待ち... {elapsed:.0f}秒経過（初回は数分かかる）", flush=True)
+            last_report = elapsed
         time.sleep(3)
     return False
 
@@ -239,6 +244,10 @@ os.makedirs(DATA_DIR, exist_ok=True)
 if http_ok(f"http://127.0.0.1:{WEBUI_PORT}/health"):
     print("Open WebUI は起動済み")
 else:
+    # Open WebUI は初期化に数分かけてから bind するため、起動しかけの古いプロセスが
+    # ポートを掴んだまま残っていることがある。必ず消してから起動し直す
+    subprocess.run("pkill -f 'open-webui serve'", shell=True)
+    time.sleep(3)
     spawn(
         "open-webui",
         f"{VENV_DIR}/bin/open-webui serve --host 127.0.0.1 --port {WEBUI_PORT}",
@@ -258,6 +267,9 @@ print(f"所要時間: {time.time() - cell_start:.0f}秒")
 
 # %%
 cell_start = time.time()
+
+# 前回実行分の cloudflared が残っていたら止める（URL は毎回変わるため取り直す）
+subprocess.run("pkill -f 'cloudflared tunnel'", shell=True)
 
 CLOUDFLARED = "/content/cloudflared"
 if not os.path.exists(CLOUDFLARED):
@@ -310,20 +322,27 @@ print(f"所要時間: {time.time() - cell_start:.0f}秒")
 # ※ フェーズ1では履歴もアカウントも永続化されないため、ランタイムを削除するとやり直しになる。
 
 # %% [markdown]
-# ## 7. 停止
+# ## 7. 停止（使い終わったら）
+#
+# **STOP にチェックを入れて（True にして）から実行**すると停止する。
+# チェックなしでは何もしないため、「すべてのセルを実行」で誤ってサービスが止まることはない。
 #
 # フェーズ1版: プロセスを止めるだけ。Drive への履歴書き戻し（R6 / AC4）はフェーズ3でここに入る。
 # このセルは単独で実行できる（再接続後などにセル0を実行し直す必要はない）。
 
 # %%
+STOP = False  # @param {type:"boolean"}
+
 import subprocess
 
-for label, pattern in [
-    ("cloudflared", "cloudflared tunnel"),
-    ("Open WebUI", "open-webui serve"),
-    ("Ollama", "ollama serve"),
-]:
-    subprocess.run(f"pkill -f '{pattern}'", shell=True)
-    print(f"{label} を停止しました")
-
-print("停止完了。ランタイムを削除してよい（ランタイム → セッションの管理）")
+if not STOP:
+    print("何もしていません。停止するには STOP にチェックを入れて（True にして）このセルを実行する")
+else:
+    for label, pattern in [
+        ("cloudflared", "cloudflared tunnel"),
+        ("Open WebUI", "open-webui serve"),
+        ("Ollama", "ollama serve"),
+    ]:
+        subprocess.run(f"pkill -f '{pattern}'", shell=True)
+        print(f"{label} を停止しました")
+    print("停止完了。ランタイムを削除してよい（ランタイム → セッションの管理）")
