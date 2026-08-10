@@ -299,22 +299,33 @@ if not os.path.exists(CLOUDFLARED):
     run(f"chmod +x {CLOUDFLARED}")
 
 
-def start_tunnel(port, attempts=5, wait_sec=30):
+def start_tunnel(port, attempts=5, wait_sec=30, live_sec=120):
+    """トンネルを立て、URL が実際に外から疎通するまで確認してから返す。
+    cloudflared は URL を予約した時点で表示するが、DNS 反映までラグがあるため、
+    公開 URL 経由で /health が通るまで待つ。疎通しない URL は捨てて取り直す。"""
     log_path = "/content/cloudflared.log"
     for attempt in range(1, attempts + 1):
         open(log_path, "w").close()  # 前回のログが残っていると誤検出するためクリア
         proc = spawn("cloudflared", f"{CLOUDFLARED} tunnel --url http://127.0.0.1:{port} --no-autoupdate")
+        url = None
         deadline = time.time() + wait_sec
         while time.time() < deadline:
             with open(log_path, errors="replace") as f:
                 m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", f.read())
             if m:
-                return m.group(0)
+                url = m.group(0)
+                break
             if proc.poll() is not None:
                 break  # プロセスが死んだら待たずに次の試行へ
             time.sleep(2)
+        if url:
+            print(f"URL を取得: {url} — 外からの疎通を確認中（DNS 反映に時間がかかることがある）...")
+            if wait_http(f"{url}/health", live_sec, "トンネル", proc=proc):
+                return url
+            print(f"試行 {attempt}/{attempts}: URL は発行されたが疎通しません。トンネルを取り直します")
+        else:
+            print(f"試行 {attempt}/{attempts}: URL を取得できませんでした。リトライします")
         proc.kill()
-        print(f"試行 {attempt}/{attempts}: URL を取得できませんでした。リトライします")
     return None
 
 
@@ -324,6 +335,7 @@ if TUNNEL_URL:
     print(f"  Open WebUI: {TUNNEL_URL}")
     print("=" * 62)
     print("この URL を別タブで開く。初回アクセス時は次のセルの手順に従うこと。")
+    print("開けない場合（DNS_PROBE_FINISHED_NXDOMAIN 等）は、1〜2分待ってから再読み込みする。")
 else:
     tail("cloudflared")
     raise RuntimeError("トンネルを確立できませんでした。時間を置いて再実行を（恒常的に失敗するなら PRD リスク3の ngrok 検討へ）")
